@@ -21,7 +21,6 @@ class _MyHomePageState extends State<MyHomePage> {
   String videoThumbnail = '';
   int audioSize = 0;
   List<MuxedStreamInfo> muxedStreams = [];
-  List<VideoOnlyStreamInfo> videoOnlyStreams = [];
   AudioOnlyStreamInfo? audioStreamInfo;
 
   @override
@@ -85,25 +84,9 @@ class _MyHomePageState extends State<MyHomePage> {
                         trailing: ElevatedButton(
                           onPressed: permissionGranted ? () {
                             String videoUrl = _urlController.text;
-                            _downloadMuxedVideo(videoUrl, info);
+                            _downloadVideo(videoUrl, info);
                           } : null,
                           child: Text('Download MP4 ${info.videoQualityLabel}'),
-                        ),
-                      )).toList(),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 200, // Adjust height as needed
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: videoOnlyStreams.map((info) => ListTile(
-                        title: Text('${info.qualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)'),
-                        trailing: ElevatedButton(
-                          onPressed: permissionGranted ? () {
-                            String videoUrl = _urlController.text;
-                            _downloadVideoOnly(videoUrl, info);
-                          } : null,
-                          child: Text('Download Video Only ${info.qualityLabel}'),
                         ),
                       )).toList(),
                     ),
@@ -144,9 +127,6 @@ class _MyHomePageState extends State<MyHomePage> {
         muxedStreams = manifest.muxed
             .where((info) => ['240p', '360p', '480p', '720p', '1080p'].contains(info.videoQualityLabel))
             .toList();
-        videoOnlyStreams = manifest.videoOnly
-            .where((info) => ['240p', '360p', '480p', '720p', '1080p'].contains(info.qualityLabel))
-            .toList();
         showDetails = true;
       });
     } catch (e) {
@@ -156,11 +136,12 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _downloadMuxedVideo(String url, MuxedStreamInfo videoStreamInfo) async {
+  Future<void> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo) async {
     var ytExplode = YoutubeExplode();
     try {
       String videoId = extractVideoId(url);
       var video = await ytExplode.videos.get(videoId);
+      var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
 
       var directory = await getExternalStorageDirectory();
       var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
@@ -169,28 +150,6 @@ class _MyHomePageState extends State<MyHomePage> {
       var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
       var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
       var videoFilePath = '$safeDirPath/$sanitizedTitle ${videoStreamInfo.videoQualityLabel}.mp4';
-      await saveStreamToFile(videoStream, videoFilePath);
-      print('Download complete: $videoFilePath');
-    } catch (e) {
-      print('Error: $e');
-    } finally {
-      ytExplode.close();
-    }
-  }
-
-  Future<void> _downloadVideoOnly(String url, VideoOnlyStreamInfo videoStreamInfo) async {
-    var ytExplode = YoutubeExplode();
-    try {
-      String videoId = extractVideoId(url);
-      var video = await ytExplode.videos.get(videoId);
-
-      var directory = await getExternalStorageDirectory();
-      var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
-      await Directory(safeDirPath).create(recursive: true);
-
-      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
-      var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
-      var videoFilePath = '$safeDirPath/$sanitizedTitle ${videoStreamInfo.qualityLabel}.mp4';
       await saveStreamToFile(videoStream, videoFilePath);
       print('Download complete: $videoFilePath');
     } catch (e) {
