@@ -20,7 +20,9 @@ class _MyHomePageState extends State<MyHomePage> {
   String videoTitle = '';
   String videoThumbnail = '';
   int audioSize = 0;
-  List<MuxedStreamInfo> videoQualities = [];
+  List<MuxedStreamInfo> muxedStreams = [];
+  List<VideoOnlyStreamInfo> videoOnlyStreams = [];
+  AudioOnlyStreamInfo? audioStreamInfo;
 
   @override
   void didChangeDependencies() {
@@ -49,7 +51,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: TextField(
                   controller: _urlController,
                   decoration: InputDecoration(
-                    hintText: 'https://www.youtube.com/watch?v=...',
+                    hintText: 'https://www.youtube.com/watch?v=... or https://youtube.com/shorts/... or https://youtu.be/...',
                   ),
                 ),
               ),
@@ -66,15 +68,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 children: [
                   Image.network(videoThumbnail),
                   Text('Title: $videoTitle'),
-                  ...videoQualities.map((info) => ListTile(
-                    title: Text('${info.videoQualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)'),
-                    trailing: ElevatedButton(
-                      onPressed: permissionGranted ? () {
-                        _downloadVideo(videoTitle, info);
-                      } : null,
-                      child: Text('Download MP4 ${info.videoQualityLabel}'),
-                    ),
-                  )).toList(),
                   Text('Audio Size: ${(audioSize / (1024 * 1024)).toStringAsFixed(2)} MB'),
                   ElevatedButton(
                     onPressed: permissionGranted ? () {
@@ -82,6 +75,38 @@ class _MyHomePageState extends State<MyHomePage> {
                       _downloadAudio(videoUrl);
                     } : null,
                     child: Text('Download MP3'),
+                  ),
+                  SizedBox(
+                    height: 200, // Adjust height as needed
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: muxedStreams.map((info) => ListTile(
+                        title: Text('${info.videoQualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)'),
+                        trailing: ElevatedButton(
+                          onPressed: permissionGranted ? () {
+                            String videoUrl = _urlController.text;
+                            _downloadMuxedVideo(videoUrl, info);
+                          } : null,
+                          child: Text('Download MP4 ${info.videoQualityLabel}'),
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 200, // Adjust height as needed
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: videoOnlyStreams.map((info) => ListTile(
+                        title: Text('${info.qualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)'),
+                        trailing: ElevatedButton(
+                          onPressed: permissionGranted ? () {
+                            String videoUrl = _urlController.text;
+                            _downloadVideoOnly(videoUrl, info);
+                          } : null,
+                          child: Text('Download Video Only ${info.qualityLabel}'),
+                        ),
+                      )).toList(),
+                    ),
                   ),
                 ],
               ) : Container(),
@@ -92,59 +117,80 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  String extractVideoId(String url) {
+    if (url.contains('youtube.com/shorts/')) {
+      return url.split('youtube.com/shorts/')[1].split('?').first;
+    } else if (url.contains('youtu.be/')) {
+      return url.split('youtu.be/')[1].split('?').first;
+    } else if (url.contains('youtube.com/watch?v=')) {
+      return url.split('youtube.com/watch?v=')[1].split('&').first;
+    } else {
+      throw ArgumentError('Invalid YouTube video ID or URL');
+    }
+  }
+
   Future<void> fetchVideoDetails(String url) async {
     var ytExplode = YoutubeExplode();
     try {
-      var video = await ytExplode.videos.get(url);
+      String videoId = extractVideoId(url);
+      var video = await ytExplode.videos.get(videoId);
       var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
-      var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-
-      // Initialize the list of qualities with all possible qualities
-      Map<String, MuxedStreamInfo?> availableQualities = {
-        '1080p': null,
-        '720p': null,
-        '480p': null,
-        '360p': null,
-        '240p': null,
-      };
-
-      // Update the availableQualities map with actual available streams
-      for (var stream in manifest.muxed) {
-        if (availableQualities.containsKey(stream.videoQualityLabel)) {
-          availableQualities[stream.videoQualityLabel] = stream;
-        }
-      }
-
-      // Filter out null values and prepare the final list
-      videoQualities = availableQualities.values.where((stream) => stream != null).toList().cast<MuxedStreamInfo>();
+      audioStreamInfo = manifest.audioOnly.first;
 
       setState(() {
         videoTitle = video.title;
-        videoThumbnail = video.thumbnails.highResUrl;
-        audioSize = audioStreamInfo.size.totalBytes;
+        videoThumbnail = video.thumbnails.standardResUrl;
+        audioSize = audioStreamInfo!.size.totalBytes;
+        muxedStreams = manifest.muxed
+            .where((info) => ['240p', '360p', '480p', '720p', '1080p'].contains(info.videoQualityLabel))
+            .toList();
+        videoOnlyStreams = manifest.videoOnly
+            .where((info) => ['240p', '360p', '480p', '720p', '1080p'].contains(info.qualityLabel))
+            .toList();
         showDetails = true;
       });
     } catch (e) {
-      print('Error fetching video details: $e');
-      // Show an error message to the user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching video details. Please try again.')),
-      );
+      print('Error: $e');
     } finally {
       ytExplode.close();
     }
   }
 
-  Future<void> _downloadVideo(String title, MuxedStreamInfo videoStreamInfo) async {
+  Future<void> _downloadMuxedVideo(String url, MuxedStreamInfo videoStreamInfo) async {
     var ytExplode = YoutubeExplode();
     try {
+      String videoId = extractVideoId(url);
+      var video = await ytExplode.videos.get(videoId);
+
       var directory = await getExternalStorageDirectory();
       var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
       await Directory(safeDirPath).create(recursive: true);
 
-      var sanitizedTitle = title.replaceAll(RegExp(r'[^\w\s-]'), '');
+      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
       var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
       var videoFilePath = '$safeDirPath/$sanitizedTitle ${videoStreamInfo.videoQualityLabel}.mp4';
+      await saveStreamToFile(videoStream, videoFilePath);
+      print('Download complete: $videoFilePath');
+    } catch (e) {
+      print('Error: $e');
+    } finally {
+      ytExplode.close();
+    }
+  }
+
+  Future<void> _downloadVideoOnly(String url, VideoOnlyStreamInfo videoStreamInfo) async {
+    var ytExplode = YoutubeExplode();
+    try {
+      String videoId = extractVideoId(url);
+      var video = await ytExplode.videos.get(videoId);
+
+      var directory = await getExternalStorageDirectory();
+      var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
+      await Directory(safeDirPath).create(recursive: true);
+
+      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
+      var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
+      var videoFilePath = '$safeDirPath/$sanitizedTitle ${videoStreamInfo.qualityLabel}.mp4';
       await saveStreamToFile(videoStream, videoFilePath);
       print('Download complete: $videoFilePath');
     } catch (e) {
@@ -157,7 +203,8 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _downloadAudio(String url) async {
     var ytExplode = YoutubeExplode();
     try {
-      var video = await ytExplode.videos.get(url);
+      String videoId = extractVideoId(url);
+      var video = await ytExplode.videos.get(videoId);
       var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
       var audioStreamInfo = manifest.audioOnly.first;
 
