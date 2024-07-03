@@ -99,20 +99,29 @@ class _MyHomePageState extends State<MyHomePage> {
       var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
       var audioStreamInfo = manifest.audioOnly.withHighestBitrate();
 
-      // Print all available muxed stream qualities
-      print('Available qualities:');
+      // Initialize the list of qualities with all possible qualities
+      Map<String, MuxedStreamInfo?> availableQualities = {
+        '1080p': null,
+        '720p': null,
+        '480p': null,
+        '360p': null,
+        '240p': null,
+      };
+
+      // Update the availableQualities map with actual available streams
       for (var stream in manifest.muxed) {
-        print('${stream.videoQualityLabel} - ${stream.videoResolution}');
+        if (availableQualities.containsKey(stream.videoQualityLabel)) {
+          availableQualities[stream.videoQualityLabel] = stream;
+        }
       }
 
-      List<MuxedStreamInfo> availableQualities = manifest.muxed.toList();
-      availableQualities.sort((a, b) => b.videoQuality.index.compareTo(a.videoQuality.index));
+      // Filter out null values and prepare the final list
+      videoQualities = availableQualities.values.where((stream) => stream != null).toList().cast<MuxedStreamInfo>();
 
       setState(() {
         videoTitle = video.title;
         videoThumbnail = video.thumbnails.highResUrl;
         audioSize = audioStreamInfo.size.totalBytes;
-        videoQualities = availableQualities;
         showDetails = true;
       });
     } catch (e) {
