@@ -124,9 +124,8 @@ class _MyHomePageState extends State<MyHomePage> {
         videoTitle = video.title;
         videoThumbnail = video.thumbnails.standardResUrl;
         audioSize = audioStreamInfo!.size.totalBytes;
-        muxedStreams = manifest.muxed
-            .where((info) => ['240p', '360p', '480p', '720p', '1080p'].contains(info.videoQualityLabel))
-            .toList();
+        // Instead of filtering, include all muxed streams
+        muxedStreams = manifest.muxed.toList();
         showDetails = true;
       });
     } catch (e) {
@@ -135,6 +134,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ytExplode.close();
     }
   }
+
 
   Future<void> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo) async {
     var ytExplode = YoutubeExplode();
