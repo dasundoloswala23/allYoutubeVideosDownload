@@ -16,17 +16,22 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _urlController = TextEditingController();
   bool permissionGranted = false;
-  bool showDetails = false;
+  bool isLoading = false;
   String videoTitle = '';
   String videoThumbnail = '';
   int audioSize = 0;
   List<MuxedStreamInfo> muxedStreams = [];
   AudioOnlyStreamInfo? audioStreamInfo;
+  double downloadProgress = 0.0;
+
+  late double width, height;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     getStoragePermission();
+    width = MediaQuery.of(context).size.width;
+    height = MediaQuery.of(context).size.height;
   }
 
   @override
@@ -35,70 +40,64 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text('YouTube Downloader'),
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text(
-                'Enter YouTube URL:',
-                style: TextStyle(fontSize: 16),
-              ),
-              SizedBox(height: 20),
-              Container(
-                width: 300,
-                child: TextField(
-                  controller: _urlController,
-                  decoration: InputDecoration(
-                    hintText: 'https://www.youtube.com/watch?v=... or https://youtube.com/shorts/... or https://youtu.be/...',
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    'Enter YouTube URL:',
+                    style: TextStyle(fontSize: 16),
                   ),
-                ),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: permissionGranted ? () async {
-                  String videoUrl = _urlController.text; // Get user input
-                  await fetchVideoDetails(videoUrl);
-                } : null,
-                child: Text('Fetch Details'),
-              ),
-              SizedBox(height: 20),
-              showDetails ? Column(
-                children: [
-                  Image.network(videoThumbnail),
-                  Text('Title: $videoTitle'),
-                  Text('Audio Size: ${(audioSize / (1024 * 1024)).toStringAsFixed(2)} MB'),
-                  ElevatedButton(
-                    onPressed: permissionGranted ? () {
-                      String videoUrl = _urlController.text;
-                      _downloadAudio(videoUrl);
-                    } : null,
-                    child: Text('Download MP3'),
-                  ),
-                  SizedBox(
-                    height: 200, // Adjust height as needed
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: muxedStreams.map((info) => ListTile(
-                        title: Text('${info.videoQualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)'),
-                        trailing: ElevatedButton(
-                          onPressed: permissionGranted ? () {
-                            String videoUrl = _urlController.text;
-                            _downloadVideo(videoUrl, info);
-                          } : null,
-                          child: Text('Download MP4 ${info.videoQualityLabel}'),
+                  SizedBox(height: 20),
+                  Container(
+                    width: 300,
+                    child: TextField(
+                      controller: _urlController,
+                      decoration: InputDecoration(
+                        hintText: 'Enter YouTube URL',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10.0),
                         ),
-                      )).toList(),
+                        filled: true,
+                        fillColor: Colors.grey[200],
+                        contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                      ),
                     ),
                   ),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: permissionGranted && !isLoading ? () async {
+                      String videoUrl = _urlController.text; // Get user input
+                      await fetchVideoDetails(videoUrl);
+                    } : null,
+                    child: Text('Download Video'),
+                  ),
                 ],
-              ) : Container(),
-            ],
+              ),
+            ),
           ),
-        ),
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.7),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 10),
+                    Text('Loading...', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
+
 
   String extractVideoId(String url) {
     if (url.contains('youtube.com/shorts/')) {
@@ -113,6 +112,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> fetchVideoDetails(String url) async {
+    setState(() {
+      isLoading = true;
+    });
+
     var ytExplode = YoutubeExplode();
     try {
       String videoId = extractVideoId(url);
@@ -125,18 +128,107 @@ class _MyHomePageState extends State<MyHomePage> {
         videoThumbnail = video.thumbnails.standardResUrl;
         audioSize = audioStreamInfo!.size.totalBytes;
         muxedStreams = manifest.muxed.toList();
-        showDetails = true;
+        isLoading = false;
+        showVideoDetails(context);
       });
     } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
       print('Error: $e');
     } finally {
       ytExplode.close();
     }
   }
 
-  Future<String> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo) async {
+  void showVideoDetails(BuildContext context) {
+    width = MediaQuery.of(context).size.width;
+    height = MediaQuery.of(context).size.height;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black.withOpacity(0.7), // Add a dark background
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Stack(
+              children: [
+                DraggableScrollableSheet(
+                  initialChildSize: 0.8,
+                  minChildSize: 0.4,
+                  maxChildSize: 0.8,
+                  builder: (context, scrollController) {
+                    return SingleChildScrollView(
+                      controller: scrollController,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            Image.network(videoThumbnail),
+                            Text('Title: $videoTitle', style: TextStyle(color: Colors.white)),
+                            ListTile(
+                              title: Text('Audio (${(audioSize / (1024 * 1024)).toStringAsFixed(2)} MB )', style: TextStyle(color: Colors.white)),
+                              trailing: ElevatedButton(
+                                onPressed: permissionGranted ? () {
+                                  String videoUrl = _urlController.text;
+                                  _downloadAudio(videoUrl, setModalState);
+                                } : null,
+                                child: Text('Download MP3'),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 200,
+                              child: ListView(
+                                shrinkWrap: true,
+                                children: muxedStreams.map((info) => ListTile(
+                                  title: Text('${info.videoQualityLabel} (${info.size.totalMegaBytes.toStringAsFixed(2)} MB)', style: TextStyle(color: Colors.white)),
+                                  trailing: ElevatedButton(
+                                    onPressed: permissionGranted ? () {
+                                      String videoUrl = _urlController.text;
+                                      _downloadVideo(videoUrl, info, setModalState);
+                                    } : null,
+                                    child: Text('Download  ${info.videoQualityLabel}'),
+                                  ),
+                                )).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                if (isLoading)
+                  Center(
+                    child: Container(
+                      width: width,
+                      color: Colors.black.withOpacity(0.7),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 10),
+                          Text('Downloading...', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+
+  Future<String> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo, StateSetter setModalState) async {
     var ytExplode = YoutubeExplode();
     try {
+      setModalState(() {
+        isLoading = true; // Show progress bar
+      });
+
       String? videoId = extractVideoId(url);
       var video = await ytExplode.videos.get(videoId);
 
@@ -155,9 +247,12 @@ class _MyHomePageState extends State<MyHomePage> {
       var videoFilePath = '${downloadsDirectory.path}/$videoFileName';
 
       // Update: track download progress
-      var file = await saveStreamToFileWithProgress(videoStream, videoFilePath);
+      var file = await saveStreamToFileWithProgress(videoStream, videoFilePath, setModalState);
 
-      print('Download complete: ${file.path}');
+      setModalState(() {
+        isLoading = false; // Hide progress bar
+      });
+      showDownloadCompleteDialog('Video downloaded');
       return file.path; // Return the file path
     } catch (e) {
       print('Error in _downloadVideo: $e');
@@ -167,9 +262,13 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<String> _downloadAudio(String url) async {
+  Future<String> _downloadAudio(String url, StateSetter setModalState) async {
     var ytExplode = YoutubeExplode();
     try {
+      setModalState(() {
+        isLoading = true; // Show progress bar
+      });
+
       String videoId = extractVideoId(url);
       var video = await ytExplode.videos.get(videoId);
       var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
@@ -190,9 +289,12 @@ class _MyHomePageState extends State<MyHomePage> {
       var audioFilePath = '${downloadsDirectory.path}/$audioFileName';
 
       // Update: track download progress
-      var file = await saveStreamToFileWithProgress(audioStream, audioFilePath);
+      var file = await saveStreamToFileWithProgress(audioStream, audioFilePath, setModalState);
 
-      print('Download complete: ${file.path}');
+      setModalState(() {
+        isLoading = false; // Hide progress bar
+      });
+      showDownloadCompleteDialog('Audio downloaded');
       return file.path; // Return the file path
     } catch (e) {
       print('Error in _downloadAudio: $e');
@@ -202,14 +304,31 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<File> saveStreamToFileWithProgress(Stream<List<int>> stream, String filePath) async {
+
+  Future<File> saveStreamToFileWithProgress(Stream<List<int>> stream, String filePath, StateSetter setModalState) async {
     var file = File(filePath);
     var sink = file.openWrite();
 
     var totalBytes = 0;
+    var contentLength = 0;
+
+    // Buffer the stream data to a list to calculate total length
+    List<int> buffer = [];
     await for (var data in stream) {
+      buffer.addAll(data);
+      contentLength += data.length;
+    }
+
+    // Create a new stream from the buffered data
+    Stream<List<int>> newStream = Stream.fromIterable([buffer]);
+
+    // Write the stream to file and update progress
+    await for (var data in newStream) {
       totalBytes += data.length;
       sink.add(data);
+      setModalState(() {
+        downloadProgress = contentLength > 0 ? totalBytes / contentLength : 0.0;
+      });
       print('Download progress: ${totalBytes} bytes');
     }
 
@@ -256,5 +375,23 @@ class _MyHomePageState extends State<MyHomePage> {
         });
       }
     }
+  }
+
+  void showDownloadCompleteDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Download Complete'),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }
