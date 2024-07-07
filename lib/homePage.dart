@@ -124,7 +124,6 @@ class _MyHomePageState extends State<MyHomePage> {
         videoTitle = video.title;
         videoThumbnail = video.thumbnails.standardResUrl;
         audioSize = audioStreamInfo!.size.totalBytes;
-        // Instead of filtering, include all muxed streams
         muxedStreams = manifest.muxed.toList();
         showDetails = true;
       });
@@ -135,31 +134,40 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-
-  Future<void> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo) async {
+  Future<String> _downloadVideo(String url, MuxedStreamInfo videoStreamInfo) async {
     var ytExplode = YoutubeExplode();
     try {
-      String videoId = extractVideoId(url);
+      String? videoId = extractVideoId(url);
       var video = await ytExplode.videos.get(videoId);
-      var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
+
+      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), ''); // Remove invalid characters
+      var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
+      var videoFileName = '$sanitizedTitle ${videoStreamInfo.videoQualityLabel}.mp4';
 
       var directory = await getExternalStorageDirectory();
-      var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
-      await Directory(safeDirPath).create(recursive: true);
+      if (directory == null) {
+        throw Exception("Could not get the external storage directory");
+      }
+      var downloadsDirectory = Directory('/storage/emulated/0/Download');
+      if (!await downloadsDirectory.exists()) {
+        await downloadsDirectory.create(recursive: true);
+      }
+      var videoFilePath = '${downloadsDirectory.path}/$videoFileName';
 
-      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
-      var videoStream = ytExplode.videos.streamsClient.get(videoStreamInfo);
-      var videoFilePath = '$safeDirPath/$sanitizedTitle ${videoStreamInfo.videoQualityLabel}.mp4';
-      await saveStreamToFile(videoStream, videoFilePath);
-      print('Download complete: $videoFilePath');
+      // Update: track download progress
+      var file = await saveStreamToFileWithProgress(videoStream, videoFilePath);
+
+      print('Download complete: ${file.path}');
+      return file.path; // Return the file path
     } catch (e) {
-      print('Error: $e');
+      print('Error in _downloadVideo: $e');
+      rethrow; // Rethrow to handle it in the caller function
     } finally {
       ytExplode.close();
     }
   }
 
-  Future<void> _downloadAudio(String url) async {
+  Future<String> _downloadAudio(String url) async {
     var ytExplode = YoutubeExplode();
     try {
       String videoId = extractVideoId(url);
@@ -167,27 +175,46 @@ class _MyHomePageState extends State<MyHomePage> {
       var manifest = await ytExplode.videos.streamsClient.getManifest(video.id);
       var audioStreamInfo = manifest.audioOnly.first;
 
-      var directory = await getExternalStorageDirectory();
-      var safeDirPath = directory?.path ?? '/storage/emulated/0/Download';
-      await Directory(safeDirPath).create(recursive: true);
-
-      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), '');
+      var sanitizedTitle = video.title.replaceAll(RegExp(r'[^\w\s-]'), ''); // Remove invalid characters
       var audioStream = ytExplode.videos.streamsClient.get(audioStreamInfo);
-      var audioFilePath = '$safeDirPath/$sanitizedTitle.mp3';
-      await saveStreamToFile(audioStream, audioFilePath);
-      print('Download complete: $audioFilePath');
+      var audioFileName = '$sanitizedTitle.mp3';
+
+      var directory = await getExternalStorageDirectory();
+      if (directory == null) {
+        throw Exception("Could not get the external storage directory");
+      }
+      var downloadsDirectory = Directory('/storage/emulated/0/Download');
+      if (!await downloadsDirectory.exists()) {
+        await downloadsDirectory.create(recursive: true);
+      }
+      var audioFilePath = '${downloadsDirectory.path}/$audioFileName';
+
+      // Update: track download progress
+      var file = await saveStreamToFileWithProgress(audioStream, audioFilePath);
+
+      print('Download complete: ${file.path}');
+      return file.path; // Return the file path
     } catch (e) {
-      print('Error: $e');
+      print('Error in _downloadAudio: $e');
+      rethrow; // Rethrow to handle it in the caller function
     } finally {
       ytExplode.close();
     }
   }
 
-  Future<void> saveStreamToFile(Stream<List<int>> stream, String filePath) async {
+  Future<File> saveStreamToFileWithProgress(Stream<List<int>> stream, String filePath) async {
     var file = File(filePath);
     var sink = file.openWrite();
-    await stream.pipe(sink);
+
+    var totalBytes = 0;
+    await for (var data in stream) {
+      totalBytes += data.length;
+      sink.add(data);
+      print('Download progress: ${totalBytes} bytes');
+    }
+
     await sink.close();
+    return file;
   }
 
   Future<void> getStoragePermission() async {
