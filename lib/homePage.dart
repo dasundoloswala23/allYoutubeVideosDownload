@@ -38,65 +38,93 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.redAccent,
+        centerTitle: true,
         title: Text('YouTube Downloader'),
+
       ),
-      body: Stack(
-        children: [
-          Center(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    'Enter YouTube URL:',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                  SizedBox(height: 20),
-                  Container(
-                    width: 300,
-                    child: TextField(
-                      controller: _urlController,
-                      decoration: InputDecoration(
-                        hintText: 'Enter YouTube URL',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10.0),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[200],
-                        contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+      body: Container(
+        color: Colors.black.withOpacity(0.5),
+        child: Stack(
+
+          children: [
+            Center(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Card(
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10.0),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Text(
+                            'Paste YouTube URL:',
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                          SizedBox(height: 20),
+                          Container(
+                            width: 300,
+                            child: TextField(
+                              controller: _urlController,
+                              decoration: InputDecoration(
+                                hintText: 'Paste YouTube URL',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10.0),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[200],
+                                contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 20),
+                          ElevatedButton(
+                            onPressed: permissionGranted && !isLoading
+                                ? () async {
+                              String videoUrl = _urlController.text; // Get user input
+                              await fetchVideoDetails(videoUrl);
+                            }
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                            ),
+                            child: Text('Download Video', style: TextStyle(fontSize: 16)),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: permissionGranted && !isLoading ? () async {
-                      String videoUrl = _urlController.text; // Get user input
-                      await fetchVideoDetails(videoUrl);
-                    } : null,
-                    child: Text('Download Video'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.7),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 10),
-                    Text('Loading...', style: TextStyle(color: Colors.white)),
-                  ],
                 ),
               ),
             ),
-        ],
+            if (isLoading)
+              Container(
+                color: Colors.black.withOpacity(0.7),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 10),
+                      Text('Loading...', style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
+
 
 
   String extractVideoId(String url) {
